@@ -166,8 +166,6 @@ class HeAPPlacer
     {
         tmg.setup_only = true;
         tmg.setup();
-        if (cfg.timing_driven)
-            update_timing_weights(0);
 
         for (auto &cell : ctx->cells)
             if (!cell.second->isPseudo() && cell.second->cluster != ClusterId())
@@ -304,10 +302,8 @@ class HeAPPlacer
             }
 
             // Update timing weights
-            if (cfg.timing_driven) {
+            if (cfg.timing_driven)
                 tmg.run();
-                update_timing_weights(iter + 1);
-            }
 
             if (legal_hpwl < best_hpwl) {
                 best_hpwl = legal_hpwl;
@@ -430,27 +426,6 @@ class HeAPPlacer
     dict<IdString, std::tuple<int, int>> bel_types;
 
     TimingAnalyser tmg;
-    // Per-sink timing weight multipliers used in the bound2bound model
-    dict<CellPortKey, float> timing_weights;
-
-    // Accumulate criticality-based net weights across iterations instead of recomputing them from scratch, so that
-    // arcs pulled together by a high weight don't immediately lose it and drift apart again (Kong, ICCAD'02;
-    // "momentum" net weighting, DREAMPlace 4.0). With netWeightMomentum = 0 this reduces to the memoryless scheme.
-    void update_timing_weights(int iter)
-    {
-        float beta = std::min(cfg.netWeightMomentum, 0.5f + 0.05f * iter);
-        for (auto &net : ctx->nets) {
-            for (auto &usr : net.second->users) {
-                CellPortKey key(usr);
-                float inst = 1.0f + cfg.timingWeight * std::pow(tmg.get_criticality(key), cfg.criticalityExponent);
-                auto fnd = timing_weights.find(key);
-                if (fnd == timing_weights.end() || iter == 0)
-                    timing_weights[key] = inst;
-                else
-                    fnd->second = beta * fnd->second + (1.0f - beta) * inst;
-            }
-        }
-    }
 
     dict<IdString, BoundingBox> constraint_region_bounds;
 
@@ -967,10 +942,9 @@ class HeAPPlacer
                                            std::max<double>(1, (yaxis ? cfg.hpwl_scale_y : cfg.hpwl_scale_x) *
                                                                        std::abs(o_pos - this_pos)));
 
-                    if (user_idx && cfg.timing_driven) {
-                        auto fnd = timing_weights.find(CellPortKey(port));
-                        if (fnd != timing_weights.end())
-                            weight *= fnd->second;
+                    if (user_idx) {
+                        weight *= (1.0 + cfg.timingWeight * std::pow(tmg.get_criticality(CellPortKey(port)),
+                                                                     cfg.criticalityExponent));
                     }
 
                     // If cell 0 is not fixed, it will stamp +w on its equation and -w on the other end's equation,
@@ -2190,7 +2164,6 @@ PlacerHeapCfg::PlacerHeapCfg(Context *ctx)
     beta = ctx->setting<float>("placerHeap/beta");
     criticalityExponent = ctx->setting<int>("placerHeap/criticalityExponent");
     timingWeight = ctx->setting<int>("placerHeap/timingWeight");
-    netWeightMomentum = ctx->setting<float>("placerHeap/netWeightMomentum", 0.8);
     parallelRefine = ctx->setting<bool>("placerHeap/parallelRefine", false);
     netShareWeight = ctx->setting<float>("placerHeap/netShareWeight", 0);
     disableCtrlSet = ctx->setting<bool>("placerHeap/noCtrlSet", false);

@@ -40,7 +40,6 @@ struct PlacerHeapCfg
     float alpha, beta;
     float criticalityExponent;
     float timingWeight;
-    float netWeightMomentum;
     bool timing_driven;
     float solverTolerance;
     bool placeAllAtOnce;
