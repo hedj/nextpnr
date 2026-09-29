@@ -382,6 +382,14 @@ po::options_description CommandHandler::getGeneralOptions()
                           "N, default: 8, 0 for no timeout)");
 
     general.add_options()("placer-heap-no-ctrl-set", "disable control set awareness in placer heap");
+    general.add_options()("placer-static-timing-start", po::value<float>(),
+                          "static placer: start timing weighting below this logic overlap (float, default: 0.9)");
+    general.add_options()("placer-static-timing-decay", po::value<float>(),
+                          "static placer: momentum decay of timing weight updates (float, default: 0.5)");
+    general.add_options()("placer-static-timing-exp", po::value<float>(),
+                          "static placer: criticality exponent of timing weight updates (float, default: 16)");
+    general.add_options()("placer-static-timing-max-weight", po::value<float>(),
+                          "static placer: maximum timing weight (float, default: 100)");
 
     general.add_options()("static-dump-density", "write density csv files during placer-static flow");
 
@@ -519,6 +527,13 @@ void CommandHandler::setupContext(Context *ctx)
 
     if (vm.count("placer-heap-no-ctrl-set"))
         ctx->settings[ctx->id("placerHeap/noCtrlSet")] = true;
+
+    for (auto &opt : {std::make_pair("placer-static-timing-start", "placerStatic/timingStartOverlap"),
+                      std::make_pair("placer-static-timing-decay", "placerStatic/timingDecay"),
+                      std::make_pair("placer-static-timing-exp", "placerStatic/timingExponent"),
+                      std::make_pair("placer-static-timing-max-weight", "placerStatic/timingMaxWeight")})
+        if (vm.count(opt.first))
+            ctx->settings[ctx->id(opt.second)] = std::to_string(vm[opt.first].as<float>());
 
     if (vm.count("parallel-refine"))
         ctx->settings[ctx->id("placerHeap/parallelRefine")] = true;

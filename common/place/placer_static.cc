@@ -1778,6 +1778,10 @@ bool placer_static(Context *ctx, PlacerStaticCfg cfg)
 PlacerStaticCfg::PlacerStaticCfg(Context *ctx)
 {
     timing_driven = ctx->setting<bool>("timing_driven");
+    timing_start_overlap = ctx->setting<float>("placerStatic/timingStartOverlap", timing_start_overlap);
+    timing_decay = ctx->setting<float>("placerStatic/timingDecay", timing_decay);
+    timing_exponent = ctx->setting<float>("placerStatic/timingExponent", timing_exponent);
+    timing_max_weight = ctx->setting<float>("placerStatic/timingMaxWeight", timing_max_weight);
 
     hpwl_scale_x = 1;
     hpwl_scale_y = 1;
