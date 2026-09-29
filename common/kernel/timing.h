@@ -85,8 +85,6 @@ struct TimingAnalyser
     void set_route_delay(CellPortKey port, DelayPair value);
 
     float get_criticality(CellPortKey port) const { return ports.at(port).worst_crit; }
-    // Only computed if with_path_weights is set
-    float get_path_weight(CellPortKey port) const { return ports.at(port).path_weight; }
     float get_setup_slack(CellPortKey port) const { return ports.at(port).worst_setup_slack; }
     float get_domain_setup_slack(CellPortKey port) const
     {
@@ -102,11 +100,6 @@ struct TimingAnalyser
 
     // Enable analysis of clock skew between FFs.
     bool with_clock_skew = false;
-
-    // Compute path counting weights (Kong, ICCAD'02): the sum over all paths through a port of
-    // exp(-path_discount * path slack / critical path delay), normalised so the heaviest port per domain pair is 1.
-    bool with_path_weights = false;
-    float path_discount = 8;
 
     bool setup_only = false;
     bool have_loops = false;
@@ -127,10 +120,6 @@ struct TimingAnalyser
 
     void compute_slack();
     void compute_criticality();
-    void compute_path_weights();
-
-    DelayPair startpoint_arrival(const std::pair<CellPortKey, IdString> &sp);
-    DelayPair endpoint_required(const std::pair<CellPortKey, IdString> &ep);
 
     // Walk the endpoint back to a startpoint and get back the input ports walked
     // and the startpoint.
@@ -172,8 +161,6 @@ struct TimingAnalyser
         delay_t setup_slack = std::numeric_limits<delay_t>::max(), hold_slack = std::numeric_limits<delay_t>::max();
         int max_path_length = 0;
         float criticality = 0;
-        // Discounted path counts from startpoints to this port, and from this port to endpoints
-        double path_fwd = 0, path_bwd = 0;
     };
 
     // A cell timing arc, used to cache cell timings and reduce the number of potentially-expensive Arch API calls
@@ -216,8 +203,6 @@ struct TimingAnalyser
         DelayPair route_delay{0};
         // worst criticality and slack across domain pairs
         float worst_crit = 0;
-        // highest path weight across domain pairs
-        float path_weight = 0;
         delay_t worst_setup_slack = std::numeric_limits<delay_t>::max(),
                 worst_hold_slack = std::numeric_limits<delay_t>::max();
     };
