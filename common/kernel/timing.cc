@@ -57,6 +57,8 @@ void TimingAnalyser::run(bool update_route_delays, bool update_net_timings, bool
     walk_backward();
     compute_slack();
     compute_criticality();
+    if (with_path_weights)
+        compute_path_weights();
 
     // Ensure we clear all timing results if any of them has been marked as
     // as to be updated. This is done so we ensure it's not possible to have
@@ -559,30 +561,56 @@ void TimingAnalyser::set_required_time(CellPortKey target, domain_id_t domain, D
     req.path_length = std::max(req.path_length, path_length);
 }
 
+DelayPair TimingAnalyser::startpoint_arrival(const std::pair<CellPortKey, IdString> &sp)
+{
+    DelayPair init_arrival(0);
+    if (sp.second != IdString()) {
+        // clocked startpoints have a clock-to-out time
+        for (auto &fanin : ports.at(sp.first).cell_arcs) {
+            if (fanin.type == CellArc::CLK_TO_Q && fanin.other_port == sp.second) {
+                init_arrival += fanin.value.delayPair();
+                // Include the clock delay if clock_skew analysis is enabled
+                if (with_clock_skew) {
+                    init_arrival += ports.at(CellPortKey(sp.first.cell, fanin.other_port)).route_delay;
+                }
+                break;
+            }
+        }
+    }
+    return init_arrival;
+}
+
+DelayPair TimingAnalyser::endpoint_required(const std::pair<CellPortKey, IdString> &ep)
+{
+    DelayPair init_required(0);
+    // TODO: clock routing delay, if analysis of that is enabled
+    if (ep.second != IdString()) {
+        // Add setup/hold time, if this endpoint is clocked
+        for (auto &fanin : ports.at(ep.first).cell_arcs) {
+
+            if (fanin.type == CellArc::SETUP && fanin.other_port == ep.second) {
+                if (with_clock_skew) {
+                    init_required += ports.at(CellPortKey(ep.first.cell, fanin.other_port)).route_delay;
+                }
+                init_required.min_delay -= fanin.value.maxDelay();
+            }
+            if (fanin.type == CellArc::HOLD && fanin.other_port == ep.second)
+                init_required.max_delay += fanin.value.maxDelay();
+        }
+    }
+    return init_required;
+}
+
 void TimingAnalyser::walk_forward()
 {
     // Assign initial arrival time to domain startpoints
     for (domain_id_t dom_id = 0; dom_id < domain_id_t(domains.size()); ++dom_id) {
         auto &dom = domains.at(dom_id);
         for (auto &sp : dom.startpoints) {
-            auto &pd = ports.at(sp.first);
-            DelayPair init_arrival(0);
             CellPortKey clock_key;
-            if (sp.second != IdString()) {
-                // clocked startpoints have a clock-to-out time
-                for (auto &fanin : pd.cell_arcs) {
-                    if (fanin.type == CellArc::CLK_TO_Q && fanin.other_port == sp.second) {
-                        init_arrival += fanin.value.delayPair();
-                        // Include the clock delay if clock_skew analysis is enabled
-                        if (with_clock_skew) {
-                            init_arrival += ports.at(CellPortKey(sp.first.cell, fanin.other_port)).route_delay;
-                        }
-                        break;
-                    }
-                }
+            if (sp.second != IdString())
                 clock_key = CellPortKey(sp.first.cell, sp.second);
-            }
-            set_arrival_time(sp.first, dom_id, init_arrival, 1, clock_key);
+            set_arrival_time(sp.first, dom_id, startpoint_arrival(sp), 1, clock_key);
         }
     }
     // Walk forward in topological order
@@ -622,26 +650,10 @@ void TimingAnalyser::walk_backward()
     for (domain_id_t dom_id = 0; dom_id < domain_id_t(domains.size()); ++dom_id) {
         auto &dom = domains.at(dom_id);
         for (auto &ep : dom.endpoints) {
-            auto &pd = ports.at(ep.first);
-            DelayPair init_required(0);
             CellPortKey clock_key;
-            // TODO: clock routing delay, if analysis of that is enabled
-            if (ep.second != IdString()) {
-                // Add setup/hold time, if this endpoint is clocked
-                for (auto &fanin : pd.cell_arcs) {
-
-                    if (fanin.type == CellArc::SETUP && fanin.other_port == ep.second) {
-                        if (with_clock_skew) {
-                            init_required += ports.at(CellPortKey(ep.first.cell, fanin.other_port)).route_delay;
-                        }
-                        init_required.min_delay -= fanin.value.maxDelay();
-                    }
-                    if (fanin.type == CellArc::HOLD && fanin.other_port == ep.second)
-                        init_required.max_delay += fanin.value.maxDelay();
-                }
+            if (ep.second != IdString())
                 clock_key = CellPortKey(ep.first.cell, ep.second);
-            }
-            set_required_time(ep.first, dom_id, init_required, 1, clock_key);
+            set_required_time(ep.first, dom_id, endpoint_required(ep), 1, clock_key);
         }
     }
     // Walk backwards in topological order
@@ -788,6 +800,125 @@ void TimingAnalyser::compute_criticality()
             pd.worst_crit = std::max(pd.worst_crit, crit);
         }
     }
+}
+
+void TimingAnalyser::compute_path_weights()
+{
+    // Path counting weights (Kong, "A novel net weighting algorithm for timing-driven placement", ICCAD'02). The weight
+    // of a port is the sum over all paths through it of D(path slack), with D(x) = exp(-path_discount * x / T) and T
+    // the critical path delay of the domain pair, so a port shared by many near-critical paths outweighs one on a
+    // single path. Walking forward, each port counts the paths from the startpoints, each edge discounted by its local
+    // slack (how much earlier than the port's arrival time it delivers); walking backward likewise towards the
+    // endpoints. As D is exponential, fwd * bwd * D(port slack) is exactly the sum over all paths through the port.
+    std::vector<float> scale(domain_pairs.size(), 0); // path_discount / T, or 0 for pairs that are not weighted
+    for (domain_id_t i = 0; i < domain_id_t(domain_pairs.size()); ++i) {
+        auto &dp = domain_pairs.at(i);
+        if (domains.at(dp.key.launch).key.is_async() || domains.at(dp.key.capture).key.is_async())
+            continue;
+        // Slacks are relative to a zero clock period, so the worst slack is minus the critical path delay
+        if (dp.worst_setup_slack < 0)
+            scale.at(i) = path_discount / float(-dp.worst_setup_slack);
+    }
+    auto discount = [&](domain_id_t pair, float slack) { return std::exp(-scale.at(pair) * std::max(slack, 0.0f)); };
+    // Path counts can grow exponentially in reconvergent logic
+    auto add_paths = [](double &count, double paths) { count = std::min(count + paths, 1e100); };
+
+    for (auto &port : ports) {
+        port.second.path_weight = 0;
+        for (auto &pdp : port.second.domain_pairs)
+            pdp.second.path_fwd = pdp.second.path_bwd = 0;
+    }
+    // Paths begin at startpoints and end at endpoints
+    for (domain_id_t dom_id = 0; dom_id < domain_id_t(domains.size()); ++dom_id) {
+        auto &dom = domains.at(dom_id);
+        for (auto &sp : dom.startpoints) {
+            auto &pd = ports.at(sp.first);
+            float local_slack =
+                    float(pd.arrival.at(dom_id).value.maxDelay()) - float(startpoint_arrival(sp).maxDelay());
+            for (auto &pdp : pd.domain_pairs)
+                if (scale.at(pdp.first) > 0 && domain_pairs.at(pdp.first).key.launch == dom_id)
+                    add_paths(pdp.second.path_fwd, discount(pdp.first, local_slack));
+        }
+        for (auto &ep : dom.endpoints) {
+            auto &pd = ports.at(ep.first);
+            float local_slack =
+                    float(endpoint_required(ep).minDelay()) - float(pd.required.at(dom_id).value.minDelay());
+            for (auto &pdp : pd.domain_pairs)
+                if (scale.at(pdp.first) > 0 && domain_pairs.at(pdp.first).key.capture == dom_id)
+                    add_paths(pdp.second.path_bwd, discount(pdp.first, local_slack));
+        }
+    }
+    // Forward: paths from startpoints to each port
+    for (auto p : topological_order) {
+        auto &pd = ports.at(p);
+        for (auto &pdp : pd.domain_pairs) {
+            if (pdp.second.path_fwd == 0)
+                continue;
+            domain_id_t launch = domain_pairs.at(pdp.first).key.launch;
+            float arrival = pd.arrival.at(launch).value.maxDelay();
+            auto propagate = [&](CellPortKey next, delay_t delay) {
+                auto &next_pd = ports.at(next);
+                auto next_pdp = next_pd.domain_pairs.find(pdp.first);
+                if (next_pdp == next_pd.domain_pairs.end())
+                    return;
+                float local_slack = float(next_pd.arrival.at(launch).value.maxDelay()) - arrival - float(delay);
+                add_paths(next_pdp->second.path_fwd, pdp.second.path_fwd * discount(pdp.first, local_slack));
+            };
+            if (pd.type == PORT_OUT) {
+                NetInfo *net = port_info(p).net;
+                if (net != nullptr)
+                    for (auto &usr : net->users) {
+                        CellPortKey usr_key(usr);
+                        propagate(usr_key, ports.at(usr_key).route_delay.maxDelay());
+                    }
+            } else if (pd.type == PORT_IN) {
+                for (auto &fanout : pd.cell_arcs)
+                    if (fanout.type == CellArc::COMBINATIONAL)
+                        propagate(CellPortKey(p.cell, fanout.other_port), fanout.value.maxDelay());
+            }
+        }
+    }
+    // Backward: paths from each port to endpoints
+    for (auto p : reversed_range(topological_order)) {
+        auto &pd = ports.at(p);
+        for (auto &pdp : pd.domain_pairs) {
+            if (pdp.second.path_bwd == 0)
+                continue;
+            domain_id_t capture = domain_pairs.at(pdp.first).key.capture;
+            float required = pd.required.at(capture).value.minDelay();
+            auto propagate = [&](CellPortKey prev, delay_t delay) {
+                auto &prev_pd = ports.at(prev);
+                auto prev_pdp = prev_pd.domain_pairs.find(pdp.first);
+                if (prev_pdp == prev_pd.domain_pairs.end())
+                    return;
+                float local_slack = required - float(delay) - float(prev_pd.required.at(capture).value.minDelay());
+                add_paths(prev_pdp->second.path_bwd, pdp.second.path_bwd * discount(pdp.first, local_slack));
+            };
+            if (pd.type == PORT_IN) {
+                NetInfo *net = port_info(p).net;
+                if (net != nullptr && net->driver.cell != nullptr)
+                    propagate(CellPortKey(net->driver), pd.route_delay.maxDelay());
+            } else if (pd.type == PORT_OUT) {
+                for (auto &fanin : pd.cell_arcs)
+                    if (fanin.type == CellArc::COMBINATIONAL)
+                        propagate(CellPortKey(p.cell, fanin.other_port), fanin.value.maxDelay());
+            }
+        }
+    }
+    // Combine, normalising by the heaviest port of each domain pair
+    auto port_paths = [&](domain_id_t pair, const PortDomainPairData &d) {
+        float slack = float(d.setup_slack) - float(domain_pairs.at(pair).worst_setup_slack);
+        return d.path_fwd * d.path_bwd * discount(pair, slack);
+    };
+    std::vector<double> max_paths(domain_pairs.size(), 0);
+    for (auto &port : ports)
+        for (auto &pdp : port.second.domain_pairs)
+            max_paths.at(pdp.first) = std::max(max_paths.at(pdp.first), port_paths(pdp.first, pdp.second));
+    for (auto &port : ports)
+        for (auto &pdp : port.second.domain_pairs)
+            if (max_paths.at(pdp.first) > 0)
+                port.second.path_weight = std::max(port.second.path_weight,
+                                                   float(port_paths(pdp.first, pdp.second) / max_paths.at(pdp.first)));
 }
 
 void TimingAnalyser::build_detailed_net_timing_report()

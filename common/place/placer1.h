@@ -32,6 +32,8 @@ struct Placer1Cfg
     float startTemp;
     int timingFanoutThresh;
     bool timing_driven;
+    // Weight arcs by path counting rather than by criticality
+    bool pathWeights;
     int hpwl_scale_x, hpwl_scale_y;
 };
 
