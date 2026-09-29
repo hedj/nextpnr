@@ -367,6 +367,10 @@ po::options_description CommandHandler::getGeneralOptions()
     general.add_options()("no-tmdriv", "disable timing-driven placement");
     general.add_options()("no-path-weights",
                           "weight SA placer timing arcs by criticality rather than by path counting");
+    general.add_options()("path-weight-discount", po::value<float>(),
+                          "SA placer path weight slack discount, per critical path delay (float, default: 8)");
+    general.add_options()("path-weight-power", po::value<float>(),
+                          "power applied to SA placer path weights (float, default: 1)");
     general.add_options()("sdc", po::value<std::string>(), "Generic timing constraints SDC file to load");
     general.add_options()("sdf", po::value<std::string>(), "SDF delay back-annotation file to write");
     general.add_options()("sdf-cvc", "enable tweaks for SDF file compatibility with the CVC simulator");
@@ -505,6 +509,12 @@ void CommandHandler::setupContext(Context *ctx)
 
     if (vm.count("no-path-weights"))
         ctx->settings[ctx->id("placer1/pathWeights")] = false;
+
+    if (vm.count("path-weight-discount"))
+        ctx->settings[ctx->id("placer1/pathDiscount")] = std::to_string(vm["path-weight-discount"].as<float>());
+
+    if (vm.count("path-weight-power"))
+        ctx->settings[ctx->id("placer1/pathWeightPower")] = std::to_string(vm["path-weight-power"].as<float>());
 
     if (vm.count("placer-heap-alpha"))
         ctx->settings[ctx->id("placerHeap/alpha")] = std::to_string(vm["placer-heap-alpha"].as<float>());

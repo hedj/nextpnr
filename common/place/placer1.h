@@ -34,6 +34,8 @@ struct Placer1Cfg
     bool timing_driven;
     // Weight arcs by path counting rather than by criticality
     bool pathWeights;
+    // Path counting slack discount (see TimingAnalyser::path_discount), and power applied to the resulting weights
+    float pathDiscount, pathWeightPower;
     int hpwl_scale_x, hpwl_scale_y;
 };
 

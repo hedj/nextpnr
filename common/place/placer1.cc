@@ -239,8 +239,7 @@ class SAPlacer
         // Invoke timing analysis to obtain criticalities
         tmg.setup_only = true;
         tmg.with_path_weights = cfg.timing_driven && cfg.pathWeights;
-        // Match the selectivity of crit^crit_exp for a single path, as exp(-k * x) ~= (1 - x)^k for small x
-        tmg.path_discount = crit_exp;
+        tmg.path_discount = cfg.pathDiscount;
         tmg.setup();
 
         // Calculate costs after initial placement
@@ -848,7 +847,7 @@ class SAPlacer
 
         double delay = ctx->getDelayNS(ctx->predictArcDelay(net, user));
         if (cfg.pathWeights)
-            return delay * tmg.get_path_weight(CellPortKey(user));
+            return delay * std::pow(tmg.get_path_weight(CellPortKey(user)), cfg.pathWeightPower);
         float crit = tmg.get_criticality(CellPortKey(user));
         return delay * std::pow(crit, crit_exp);
     }
@@ -1244,6 +1243,9 @@ Placer1Cfg::Placer1Cfg(Context *ctx)
     timingFanoutThresh = std::numeric_limits<int>::max();
     timing_driven = ctx->setting<bool>("timing_driven");
     pathWeights = ctx->setting<bool>("placer1/pathWeights", true);
+    // Matches the selectivity of crit^8 for a single path, as exp(-k * x) ~= (1 - x)^k for small x
+    pathDiscount = ctx->setting<float>("placer1/pathDiscount", 8);
+    pathWeightPower = ctx->setting<float>("placer1/pathWeightPower", 1);
     hpwl_scale_x = 1;
     hpwl_scale_y = 1;
 }
