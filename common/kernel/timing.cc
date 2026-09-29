@@ -780,15 +780,8 @@ void TimingAnalyser::compute_criticality()
             if (domains.at(dp.key.launch).key.is_async() || domains.at(dp.key.capture).key.is_async())
                 continue;
 
-            // Normalise slack against max(period, period - worst_slack) rather than -worst_slack alone. The
-            // latter makes every port fully critical (and divides by zero) once the domain pair meets timing,
-            // flattening all timing-driven weights exactly when there is margin to protect.
-            float worst_neg = std::min(0.0f, float(dp.worst_setup_slack));
-            float ref = float(dp.period.minDelay()) - worst_neg;
-            // Cross-clock pairs without a known period that meet timing: nothing to normalise against
-            if (ref <= 0)
-                continue;
-            float crit = 1.0f - (float(pdp.second.setup_slack) - worst_neg) / ref;
+            float crit =
+                    1.0f - (float(pdp.second.setup_slack) - float(dp.worst_setup_slack)) / float(-dp.worst_setup_slack);
             crit = std::min(crit, 1.0f);
             crit = std::max(crit, 0.0f);
             pdp.second.criticality = crit;
