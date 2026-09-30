@@ -351,7 +351,6 @@ po::options_description CommandHandler::getGeneralOptions()
 
     general.add_options()("cstrweight", po::value<float>(), "placer weighting for relative constraint satisfaction");
     general.add_options()("starttemp", po::value<float>(), "placer SA start temperature");
-    general.add_options()("refine-starttemp", po::value<std::string>(), "SA refinement start temperature (default 1e-7)");
 
     general.add_options()("pack-only", "pack design only without placement or routing");
     general.add_options()("no-route", "process design without routing");
@@ -501,9 +500,6 @@ void CommandHandler::setupContext(Context *ctx)
     }
     if (vm.count("starttemp")) {
         ctx->settings[ctx->id("placer1/startTemp")] = std::to_string(vm["starttemp"].as<float>());
-    }
-    if (vm.count("refine-starttemp")) {
-        ctx->settings[ctx->id("placer1/refineStartTemp")] = vm["refine-starttemp"].as<std::string>();
     }
 
     if (vm.count("freq")) {
