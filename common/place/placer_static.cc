@@ -1320,8 +1320,6 @@ class StaticPlacer
         // with the log-space increment a running average of the criticality signal. The signal is a high power of the
         // (period independent) criticality, so only near-critical sinks gain weight.
         const float max_log_weight = std::log(cfg.timing_max_weight);
-        if (cfg.timing_lr)
-            tmg.update_lagrange(cfg.timing_lr_target, cfg.timing_lr_step, cfg.timing_exponent, !cfg.timing_lr_max);
         float max_weight = 1;
         int heavy = 0;
         for (auto &nd : nets) {
@@ -1333,8 +1331,6 @@ class StaticPlacer
                 float crit = tmg.get_criticality(CellPortKey(usr.value));
                 if (cfg.timing_memoryless) {
                     pd.timing_weight = 1 + 5 * crit * crit;
-                } else if (cfg.timing_lr) {
-                    pd.timing_weight = std::min(1 + tmg.get_lagrange(CellPortKey(usr.value)), cfg.timing_max_weight);
                 } else {
                     float c = std::pow(crit, cfg.timing_exponent);
                     pd.timing_velocity = cfg.timing_decay * pd.timing_velocity + (1 - cfg.timing_decay) * std::log1p(c);
@@ -1794,10 +1790,6 @@ PlacerStaticCfg::PlacerStaticCfg(Context *ctx)
     timing_exponent = ctx->setting<float>("placerStatic/timingExponent", timing_exponent);
     timing_max_weight = ctx->setting<float>("placerStatic/timingMaxWeight", timing_max_weight);
     timing_memoryless = ctx->setting<bool>("placerStatic/timingMemoryless", timing_memoryless);
-    timing_lr = ctx->setting<bool>("placerStatic/timingLr", timing_lr);
-    timing_lr_max = ctx->setting<bool>("placerStatic/timingLrMax", timing_lr_max);
-    timing_lr_target = ctx->setting<float>("placerStatic/timingLrTarget", timing_lr_target);
-    timing_lr_step = ctx->setting<float>("placerStatic/timingLrStep", timing_lr_step);
 
     hpwl_scale_x = 1;
     hpwl_scale_y = 1;

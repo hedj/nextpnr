@@ -790,66 +790,6 @@ void TimingAnalyser::compute_criticality()
     }
 }
 
-void TimingAnalyser::update_lagrange(float target, float step, float sharpness, bool merge_sum)
-{
-    // Lagrangian relaxation of the constraints "arrival <= target * critical path delay" (Chen, Chu and Wong,
-    // TCAD'99). Each endpoint multiplier takes a projected subgradient step, so endpoints with criticality below
-    // target decay to zero (complementary slackness). The multipliers are then propagated backwards so that at every
-    // node the flow in equals the flow out (the Kuhn-Tucker conditions), with the flow through a cell split between its
-    // inputs according to how close each is to being the critical one. The flow on a net arc is then its Lagrange
-    // multiplier, i.e. its weight in the relaxed objective.
-    auto max_arrival = [&](const PerPort &pd) {
-        delay_t arr = 0;
-        for (auto &a : pd.arrival)
-            arr = std::max(arr, a.second.value.maxDelay());
-        return arr;
-    };
-    for (auto &p : ports)
-        p.second.lr_flow = 0;
-    pool<CellPortKey> endpoints;
-    for (auto &dom : domains)
-        for (auto &ep : dom.endpoints)
-            endpoints.insert(ep.first);
-    for (auto &ep : endpoints) {
-        auto &pd = ports.at(ep);
-        pd.lr_lambda = std::max(0.0f, pd.lr_lambda + step * (pd.worst_crit - target));
-        pd.lr_flow = pd.lr_lambda;
-    }
-    for (auto p : reversed_range(topological_order)) {
-        auto &pd = ports.at(p);
-        if (pd.lr_flow <= 0)
-            continue;
-        if (pd.type == PORT_IN) {
-            NetInfo *net = port_info(p).net;
-            if (net == nullptr || net->driver.cell == nullptr)
-                continue;
-            auto &drv = ports.at(CellPortKey(net->driver));
-            drv.lr_flow = merge_sum ? (drv.lr_flow + pd.lr_flow) : std::max(drv.lr_flow, pd.lr_flow);
-        } else if (pd.type == PORT_OUT) {
-            float arr_out = max_arrival(pd);
-            if (arr_out <= 0)
-                continue;
-            float total = 0;
-            std::vector<std::pair<PerPort *, float>> fanin;
-            for (auto &arc : pd.cell_arcs) {
-                if (arc.type != CellArc::COMBINATIONAL)
-                    continue;
-                auto &in = ports.at(CellPortKey(p.cell, arc.other_port));
-                if (in.arrival.empty())
-                    continue;
-                float ratio = std::min(1.0f, float(max_arrival(in) + arc.value.maxDelay()) / arr_out);
-                float w = std::pow(std::max(ratio, 0.0f), sharpness);
-                fanin.emplace_back(&in, w);
-                total += w;
-            }
-            if (total <= 0)
-                continue;
-            for (auto &f : fanin)
-                f.first->lr_flow += pd.lr_flow * f.second / total;
-        }
-    }
-}
-
 void TimingAnalyser::build_detailed_net_timing_report()
 {
     auto &net_timings = result.detailed_net_timings;
