@@ -398,6 +398,8 @@ po::options_description CommandHandler::getGeneralOptions()
                           "static placer: Lagrangian target, as a fraction of the critical path delay (default: 0.9)");
     general.add_options()("placer-static-timing-lr-step", po::value<float>(),
                           "static placer: Lagrange multiplier subgradient step (float, default: 20)");
+    general.add_options()("placer-static-timing-lr-monotone",
+                          "static placer: never decrease Lagrange multipliers, for comparison");
     general.add_options()("placer-static-timing-lr-max",
                           "static placer: merge Lagrange multipliers at net drivers by max instead of sum, for "
                           "comparison");
@@ -551,6 +553,8 @@ void CommandHandler::setupContext(Context *ctx)
         ctx->settings[ctx->id("placerStatic/timingMemoryless")] = true;
     if (vm.count("placer-static-timing-lr"))
         ctx->settings[ctx->id("placerStatic/timingLr")] = true;
+    if (vm.count("placer-static-timing-lr-monotone"))
+        ctx->settings[ctx->id("placerStatic/timingLrMonotone")] = true;
     if (vm.count("placer-static-timing-lr-max"))
         ctx->settings[ctx->id("placerStatic/timingLrMax")] = true;
 

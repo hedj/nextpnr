@@ -87,7 +87,7 @@ struct TimingAnalyser
     float get_criticality(CellPortKey port) const { return ports.at(port).worst_crit; }
     float get_setup_slack(CellPortKey port) const { return ports.at(port).worst_setup_slack; }
     // Lagrangian relaxation of the (period independent) timing constraints: see update_lagrange
-    void update_lagrange(float target, float step, float sharpness, bool merge_sum = true);
+    void update_lagrange(float target, float step, float sharpness, bool merge_sum = true, bool monotone = false);
     float get_lagrange(CellPortKey port) const { return ports.at(port).lr_flow; }
     float get_domain_setup_slack(CellPortKey port) const
     {

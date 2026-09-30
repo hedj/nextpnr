@@ -79,6 +79,8 @@ struct PlacerStaticCfg
     // steps of timing_lr_step and are propagated back through the timing graph, split between cell inputs in
     // proportion to (arrival ratio)^timing_exponent. timing_lr_max merges at drivers by max rather than sum.
     bool timing_lr = false, timing_lr_max = false;
+    // With timing_lr_monotone, endpoint multipliers only ever grow (steps are clamped at zero)
+    bool timing_lr_monotone = false;
     float timing_lr_target = 0.9;
     float timing_lr_step = 20;
     // groups of cells that should be placed together.
