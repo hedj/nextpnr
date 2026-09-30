@@ -74,6 +74,13 @@ struct PlacerStaticCfg
     // For comparison: recompute the original memoryless weight (1 + 5 crit^2) at every timing update instead, still
     // starting at timing_start_overlap, and precondition with the unweighted pin count
     bool timing_memoryless = false;
+    // Alternative: Lagrangian relaxation of "arrival <= timing_lr_target * critical path delay". Each sink's weight is
+    // 1 + the Lagrange multiplier of its net arc (capped at timing_max_weight); endpoint multipliers take subgradient
+    // steps of timing_lr_step and are propagated back through the timing graph, split between cell inputs in
+    // proportion to (arrival ratio)^timing_exponent. timing_lr_max merges at drivers by max rather than sum.
+    bool timing_lr = false, timing_lr_max = false;
+    float timing_lr_target = 0.9;
+    float timing_lr_step = 20;
     // groups of cells that should be placed together.
     // groups < logic_groups are logic like LUTs and FFs, further groups for BRAM/DSP/misc
     std::vector<StaticCellGroupCfg> cell_groups;

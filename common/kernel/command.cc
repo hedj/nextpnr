@@ -392,6 +392,15 @@ po::options_description CommandHandler::getGeneralOptions()
                           "static placer: maximum timing weight (float, default: 100)");
     general.add_options()("placer-static-timing-memoryless",
                           "static placer: use memoryless timing weights, for comparison");
+    general.add_options()("placer-static-timing-lr",
+                          "static placer: use Lagrange multipliers of the timing constraints as net weights");
+    general.add_options()("placer-static-timing-lr-target", po::value<float>(),
+                          "static placer: Lagrangian target, as a fraction of the critical path delay (default: 0.9)");
+    general.add_options()("placer-static-timing-lr-step", po::value<float>(),
+                          "static placer: Lagrange multiplier subgradient step (float, default: 20)");
+    general.add_options()("placer-static-timing-lr-max",
+                          "static placer: merge Lagrange multipliers at net drivers by max instead of sum, for "
+                          "comparison");
 
     general.add_options()("static-dump-density", "write density csv files during placer-static flow");
 
@@ -533,11 +542,17 @@ void CommandHandler::setupContext(Context *ctx)
     for (auto &opt : {std::make_pair("placer-static-timing-start", "placerStatic/timingStartOverlap"),
                       std::make_pair("placer-static-timing-decay", "placerStatic/timingDecay"),
                       std::make_pair("placer-static-timing-exp", "placerStatic/timingExponent"),
-                      std::make_pair("placer-static-timing-max-weight", "placerStatic/timingMaxWeight")})
+                      std::make_pair("placer-static-timing-max-weight", "placerStatic/timingMaxWeight"),
+                      std::make_pair("placer-static-timing-lr-target", "placerStatic/timingLrTarget"),
+                      std::make_pair("placer-static-timing-lr-step", "placerStatic/timingLrStep")})
         if (vm.count(opt.first))
             ctx->settings[ctx->id(opt.second)] = std::to_string(vm[opt.first].as<float>());
     if (vm.count("placer-static-timing-memoryless"))
         ctx->settings[ctx->id("placerStatic/timingMemoryless")] = true;
+    if (vm.count("placer-static-timing-lr"))
+        ctx->settings[ctx->id("placerStatic/timingLr")] = true;
+    if (vm.count("placer-static-timing-lr-max"))
+        ctx->settings[ctx->id("placerStatic/timingLrMax")] = true;
 
     if (vm.count("parallel-refine"))
         ctx->settings[ctx->id("placerHeap/parallelRefine")] = true;

@@ -86,6 +86,9 @@ struct TimingAnalyser
 
     float get_criticality(CellPortKey port) const { return ports.at(port).worst_crit; }
     float get_setup_slack(CellPortKey port) const { return ports.at(port).worst_setup_slack; }
+    // Lagrangian relaxation of the (period independent) timing constraints: see update_lagrange
+    void update_lagrange(float target, float step, float sharpness, bool merge_sum = true);
+    float get_lagrange(CellPortKey port) const { return ports.at(port).lr_flow; }
     float get_domain_setup_slack(CellPortKey port) const
     {
         delay_t slack = std::numeric_limits<delay_t>::max();
@@ -205,6 +208,8 @@ struct TimingAnalyser
         float worst_crit = 0;
         delay_t worst_setup_slack = std::numeric_limits<delay_t>::max(),
                 worst_hold_slack = std::numeric_limits<delay_t>::max();
+        // Lagrange multiplier of the endpoint constraint (persistent) and multiplier flow into this port
+        float lr_lambda = 0, lr_flow = 0;
     };
 
     struct PerDomain
