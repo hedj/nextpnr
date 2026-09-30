@@ -383,9 +383,9 @@ po::options_description CommandHandler::getGeneralOptions()
 
     general.add_options()("placer-heap-no-ctrl-set", "disable control set awareness in placer heap");
     general.add_options()("placer-static-timing-start", po::value<float>(),
-                          "static placer: start timing weighting below this logic overlap (float, default: 0.9)");
+                          "static placer: start timing weighting below this logic overlap (float, default: 0.8)");
     general.add_options()("placer-static-timing-decay", po::value<float>(),
-                          "static placer: momentum decay of timing weight updates (float, default: 0.5)");
+                          "static placer: momentum decay of timing weight updates (float, default: 0.1)");
     general.add_options()("placer-static-timing-exp", po::value<float>(),
                           "static placer: criticality exponent of timing weight updates (float, default: 16)");
     general.add_options()("placer-static-timing-max-weight", po::value<float>(),

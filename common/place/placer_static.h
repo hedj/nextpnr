@@ -67,8 +67,8 @@ struct PlacerStaticCfg
     // Momentum-based timing net weighting (DREAMPlace 4.0): once logic overlap falls below timing_start_overlap, each
     // timing update multiplies every sink's weight by (1 + c), with ln(1 + c) a running average (decay timing_decay)
     // of ln(1 + crit^timing_exponent). Weights only grow, up to timing_max_weight.
-    float timing_start_overlap = 0.9;
-    float timing_decay = 0.5;
+    float timing_start_overlap = 0.8;
+    float timing_decay = 0.1;
     float timing_exponent = 16;
     float timing_max_weight = 100;
     // For comparison: recompute the original memoryless weight (1 + 5 crit^2) at every timing update instead, still
