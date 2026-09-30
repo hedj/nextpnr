@@ -255,7 +255,7 @@ class SAPlacer
         wirelen_t min_wirelen = curr_wirelen_cost;
 
         int n_no_progress = 0;
-        temp = refine ? 1e-7 : cfg.startTemp;
+        temp = refine ? cfg.refineStartTemp : cfg.startTemp;
 
         // Main simulated annealing loop
         for (int iter = 1;; iter++) {
@@ -1236,6 +1236,7 @@ Placer1Cfg::Placer1Cfg(Context *ctx)
     netShareWeight = ctx->setting<float>("placer1/netShareWeight", 0);
     minBelsForGridPick = ctx->setting<int>("placer1/minBelsForGridPick", 64);
     startTemp = ctx->setting<float>("placer1/startTemp", 1);
+    refineStartTemp = ctx->setting<float>("placer1/refineStartTemp", 1e-7);
     timingFanoutThresh = std::numeric_limits<int>::max();
     timing_driven = ctx->setting<bool>("timing_driven");
     hpwl_scale_x = 1;

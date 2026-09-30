@@ -30,6 +30,8 @@ struct Placer1Cfg
     float constraintWeight, netShareWeight;
     int minBelsForGridPick;
     float startTemp;
+    // Start temperature for refinement after analytic placement; the default is effectively a greedy quench
+    float refineStartTemp;
     int timingFanoutThresh;
     bool timing_driven;
     int hpwl_scale_x, hpwl_scale_y;
