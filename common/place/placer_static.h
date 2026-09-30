@@ -71,6 +71,9 @@ struct PlacerStaticCfg
     float timing_decay = 0.5;
     float timing_exponent = 16;
     float timing_max_weight = 100;
+    // For comparison: recompute the original memoryless weight (1 + 5 crit^2) at every timing update instead, still
+    // starting at timing_start_overlap, and precondition with the unweighted pin count
+    bool timing_memoryless = false;
     // groups of cells that should be placed together.
     // groups < logic_groups are logic like LUTs and FFs, further groups for BRAM/DSP/misc
     std::vector<StaticCellGroupCfg> cell_groups;

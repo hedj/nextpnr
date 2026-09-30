@@ -390,6 +390,8 @@ po::options_description CommandHandler::getGeneralOptions()
                           "static placer: criticality exponent of timing weight updates (float, default: 16)");
     general.add_options()("placer-static-timing-max-weight", po::value<float>(),
                           "static placer: maximum timing weight (float, default: 100)");
+    general.add_options()("placer-static-timing-memoryless",
+                          "static placer: use memoryless timing weights, for comparison");
 
     general.add_options()("static-dump-density", "write density csv files during placer-static flow");
 
@@ -534,6 +536,8 @@ void CommandHandler::setupContext(Context *ctx)
                       std::make_pair("placer-static-timing-max-weight", "placerStatic/timingMaxWeight")})
         if (vm.count(opt.first))
             ctx->settings[ctx->id(opt.second)] = std::to_string(vm[opt.first].as<float>());
+    if (vm.count("placer-static-timing-memoryless"))
+        ctx->settings[ctx->id("placerStatic/timingMemoryless")] = true;
 
     if (vm.count("parallel-refine"))
         ctx->settings[ctx->id("placerHeap/parallelRefine")] = true;

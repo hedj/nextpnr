@@ -1328,10 +1328,15 @@ class StaticPlacer
             float driver_weight = 1;
             for (auto usr : nd.ni->users.enumerate()) {
                 auto &pd = nd.ports.at(usr.index.idx());
-                float c = std::pow(tmg.get_criticality(CellPortKey(usr.value)), cfg.timing_exponent);
-                pd.timing_velocity = cfg.timing_decay * pd.timing_velocity + (1 - cfg.timing_decay) * std::log1p(c);
-                pd.timing_log_weight = std::min(pd.timing_log_weight + pd.timing_velocity, max_log_weight);
-                pd.timing_weight = std::exp(pd.timing_log_weight);
+                float crit = tmg.get_criticality(CellPortKey(usr.value));
+                if (cfg.timing_memoryless) {
+                    pd.timing_weight = 1 + 5 * crit * crit;
+                } else {
+                    float c = std::pow(crit, cfg.timing_exponent);
+                    pd.timing_velocity = cfg.timing_decay * pd.timing_velocity + (1 - cfg.timing_decay) * std::log1p(c);
+                    pd.timing_log_weight = std::min(pd.timing_log_weight + pd.timing_velocity, max_log_weight);
+                    pd.timing_weight = std::exp(pd.timing_log_weight);
+                }
                 driver_weight = std::max(driver_weight, pd.timing_weight);
                 max_weight = std::max(max_weight, pd.timing_weight);
                 heavy += (pd.timing_weight >= 2);
@@ -1342,6 +1347,8 @@ class StaticPlacer
         for (auto &mc : mcells)
             mc.extra_pin_weight = 0;
         for (auto &cell : ctx->cells) {
+            if (cfg.timing_memoryless)
+                break;
             CellInfo *ci = cell.second.get();
             if (ci->udata == -1)
                 continue;
@@ -1782,6 +1789,7 @@ PlacerStaticCfg::PlacerStaticCfg(Context *ctx)
     timing_decay = ctx->setting<float>("placerStatic/timingDecay", timing_decay);
     timing_exponent = ctx->setting<float>("placerStatic/timingExponent", timing_exponent);
     timing_max_weight = ctx->setting<float>("placerStatic/timingMaxWeight", timing_max_weight);
+    timing_memoryless = ctx->setting<bool>("placerStatic/timingMemoryless", timing_memoryless);
 
     hpwl_scale_x = 1;
     hpwl_scale_y = 1;
