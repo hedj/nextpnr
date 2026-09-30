@@ -790,14 +790,14 @@ void TimingAnalyser::compute_criticality()
     }
 }
 
-void TimingAnalyser::update_lagrange(float target, float step, float sharpness, bool merge_sum, bool monotone)
+void TimingAnalyser::update_lagrange(float target, float step, float sharpness, bool merge_sum)
 {
     // Lagrangian relaxation of the constraints "arrival <= target * critical path delay" (Chen, Chu and Wong,
     // TCAD'99). Each endpoint multiplier takes a projected subgradient step, so endpoints with criticality below
     // target decay to zero (complementary slackness). The multipliers are then propagated backwards so that at every
     // node the flow in equals the flow out (the Kuhn-Tucker conditions), with the flow through a cell split between its
     // inputs according to how close each is to being the critical one. The flow on a net arc is then its Lagrange
-    // multiplier, i.e. its weight in the relaxed objective. With monotone set, endpoint multipliers never decrease.
+    // multiplier, i.e. its weight in the relaxed objective.
     auto max_arrival = [&](const PerPort &pd) {
         delay_t arr = 0;
         for (auto &a : pd.arrival)
@@ -812,8 +812,7 @@ void TimingAnalyser::update_lagrange(float target, float step, float sharpness, 
             endpoints.insert(ep.first);
     for (auto &ep : endpoints) {
         auto &pd = ports.at(ep);
-        float delta = step * (pd.worst_crit - target);
-        pd.lr_lambda = std::max(0.0f, pd.lr_lambda + (monotone ? std::max(0.0f, delta) : delta));
+        pd.lr_lambda = std::max(0.0f, pd.lr_lambda + step * (pd.worst_crit - target));
         pd.lr_flow = pd.lr_lambda;
     }
     for (auto p : reversed_range(topological_order)) {

@@ -1321,8 +1321,7 @@ class StaticPlacer
         // (period independent) criticality, so only near-critical sinks gain weight.
         const float max_log_weight = std::log(cfg.timing_max_weight);
         if (cfg.timing_lr)
-            tmg.update_lagrange(cfg.timing_lr_target, cfg.timing_lr_step, cfg.timing_exponent, !cfg.timing_lr_max,
-                                cfg.timing_lr_monotone);
+            tmg.update_lagrange(cfg.timing_lr_target, cfg.timing_lr_step, cfg.timing_exponent, !cfg.timing_lr_max);
         float max_weight = 1;
         int heavy = 0;
         for (auto &nd : nets) {
@@ -1797,7 +1796,6 @@ PlacerStaticCfg::PlacerStaticCfg(Context *ctx)
     timing_memoryless = ctx->setting<bool>("placerStatic/timingMemoryless", timing_memoryless);
     timing_lr = ctx->setting<bool>("placerStatic/timingLr", timing_lr);
     timing_lr_max = ctx->setting<bool>("placerStatic/timingLrMax", timing_lr_max);
-    timing_lr_monotone = ctx->setting<bool>("placerStatic/timingLrMonotone", timing_lr_monotone);
     timing_lr_target = ctx->setting<float>("placerStatic/timingLrTarget", timing_lr_target);
     timing_lr_step = ctx->setting<float>("placerStatic/timingLrStep", timing_lr_step);
 
