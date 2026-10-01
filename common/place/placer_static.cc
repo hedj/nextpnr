@@ -85,6 +85,8 @@ struct MoveCell
     RealPair ref_dens_grad, dens_grad, last_dens_grad;
     RealPair ref_total_grad, total_grad, last_total_grad;
     int32_t pin_count;
+    // sum over pins of (timing weight - 1), for the preconditioner
+    float extra_pin_weight = 0;
     int16_t group;
     int16_t bx, by; // bins
     bool is_fixed : 1;
@@ -135,6 +137,8 @@ struct PlacerPort
     PortRef ref;
     DoublePair max_exp{invalid, invalid};
     DoublePair min_exp{invalid, invalid};
+    // timing net weighting state; the weight of a driver is that of its heaviest sink for low-fanout nets
+    float timing_weight = 1, timing_log_weight = 0, timing_velocity = 0;
     bool has_max_exp(Axis axis) const { return max_exp.at(axis) != invalid; }
     bool has_min_exp(Axis axis) const { return min_exp.at(axis) != invalid; }
 };
@@ -959,19 +963,23 @@ class StaticPlacer
                         (max_sum * max_sum);
                 NPNR_ASSERT(std::isfinite(d_max));
             }
-            float crit = 0.0;
-            if (cfg.timing_driven) {
-                if (port.second.type == PORT_IN) {
-                    crit = tmg.get_criticality(CellPortKey(cell->name, port.first));
-                } else if (port.second.type == PORT_OUT) {
-                    if (ni && ni->users.entries() < 5) {
-                        for (auto usr : ni->users)
-                            crit = std::max(crit, tmg.get_criticality(CellPortKey(usr)));
+            if (cfg.timing_momentum) {
+                gradient += pd.timing_weight * (d_min - d_max);
+            } else {
+                float crit = 0.0;
+                if (cfg.timing_driven) {
+                    if (port.second.type == PORT_IN) {
+                        crit = tmg.get_criticality(CellPortKey(cell->name, port.first));
+                    } else if (port.second.type == PORT_OUT) {
+                        if (ni && ni->users.entries() < 5) {
+                            for (auto usr : ni->users)
+                                crit = std::max(crit, tmg.get_criticality(CellPortKey(usr)));
+                        }
                     }
                 }
+                float weight = 1.0 + 5 * std::pow(crit, 2);
+                gradient += weight * (d_min - d_max);
             }
-            float weight = 1.0 + 5 * std::pow(crit, 2);
-            gradient += weight * (d_min - d_max);
         }
 
         NPNR_ASSERT(std::isfinite(gradient));
@@ -1056,7 +1064,8 @@ class StaticPlacer
 #endif
             // Preconditioner from replace for now
 
-            float precond = std::max(1.0f, float(cell.pin_count) + dens_penalty[cell.group] * cell.rect.area());
+            float precond = std::max(1.0f, float(cell.pin_count) + cell.extra_pin_weight +
+                                                   dens_penalty[cell.group] * cell.rect.area());
             if (ref) {
                 cell.ref_total_grad =
                         ((cell.ref_wl_grad * -1) - cell.ref_dens_grad * dens_penalty[cell.group]) / precond;
@@ -1198,7 +1207,8 @@ class StaticPlacer
                 initial_steplength *= 10;
             }
         }
-        update_timing();
+        if (!cfg.timing_momentum)
+            update_timing();
     }
 
     RealPair clamp_loc(RealPair loc)
@@ -1289,10 +1299,23 @@ class StaticPlacer
             update_timing();
     }
 
+    bool timing_weighting = false;
+
     void update_timing()
     {
         if (!cfg.timing_driven)
             return;
+        if (cfg.timing_momentum && !timing_weighting) {
+            // Timing estimates are meaningless while cells are still clumped together, so only start weighting once
+            // they have spread out
+            float logic_overlap = 0;
+            for (int i = 0; i < cfg.logic_groups; i++)
+                logic_overlap = std::max(logic_overlap, groups.at(i).overlap);
+            if (logic_overlap >= cfg.timing_start_overlap)
+                return;
+            log_info("Starting timing-driven net weighting at iteration %d\n", iter);
+            timing_weighting = true;
+        }
         for (auto &net : nets) {
             NetInfo *ni = net.ni;
             if (ni->driver.cell == nullptr)
@@ -1306,6 +1329,56 @@ class StaticPlacer
             }
         }
         tmg.run(false);
+        if (cfg.timing_momentum)
+            update_timing_weights();
+    }
+
+    void update_timing_weights()
+    {
+        // Momentum-based net weighting (Liao et al., "DREAMPlace 4.0", DATE'22): accumulate weights multiplicatively,
+        // with the log-space increment a running average of the criticality signal. The signal is a high power of the
+        // (period independent) criticality, so only near-critical sinks gain weight.
+        const float max_log_weight = std::log(cfg.timing_max_weight);
+        float max_weight = 1;
+        int heavy = 0;
+        for (auto &nd : nets) {
+            if (nd.skip)
+                continue;
+            float driver_weight = 1;
+            for (auto usr : nd.ni->users.enumerate()) {
+                auto &pd = nd.ports.at(usr.index.idx());
+                float crit = tmg.get_criticality(CellPortKey(usr.value));
+                float c = std::pow(crit, cfg.timing_exponent);
+                pd.timing_velocity = cfg.timing_decay * pd.timing_velocity + (1 - cfg.timing_decay) * std::log1p(c);
+                pd.timing_log_weight = std::min(pd.timing_log_weight + pd.timing_velocity, max_log_weight);
+                pd.timing_weight = std::exp(pd.timing_log_weight);
+                driver_weight = std::max(driver_weight, pd.timing_weight);
+                max_weight = std::max(max_weight, pd.timing_weight);
+                heavy += (pd.timing_weight >= 2);
+            }
+            nd.ports.back().timing_weight = (nd.ni->users.entries() < 5) ? driver_weight : 1;
+        }
+        // Precondition with the weighted pin count
+        for (auto &mc : mcells)
+            mc.extra_pin_weight = 0;
+        for (auto &cell : ctx->cells) {
+            CellInfo *ci = cell.second.get();
+            if (ci->udata == -1)
+                continue;
+            auto &mc = mcells.at(ci->udata);
+            for (auto &port : ci->ports) {
+                NetInfo *ni = port.second.net;
+                if (!ni)
+                    continue;
+                auto &nd = nets.at(ni->udata);
+                if (nd.skip)
+                    continue;
+                int idx = (port.second.type == PORT_OUT) ? (nd.ports.size() - 1) : port.second.user_idx.idx();
+                mc.extra_pin_weight += nd.ports.at(idx).timing_weight - 1;
+            }
+        }
+        if (ctx->verbose || (iter % 50) == 0)
+            log_info("   timing weights: max %.1f, %d sinks at 2x or more\n", max_weight, heavy);
     }
 
     void legalise_step(bool dsp_bram)
@@ -1718,6 +1791,7 @@ class StaticPlacer
 
 bool placer_static(Context *ctx, PlacerStaticCfg cfg)
 {
+    cfg.timing_momentum = ctx->setting<bool>("placerStatic/timingMomentum", cfg.timing_momentum);
     StaticPlacer(ctx, cfg).place();
     return true;
 }
@@ -1725,6 +1799,10 @@ bool placer_static(Context *ctx, PlacerStaticCfg cfg)
 PlacerStaticCfg::PlacerStaticCfg(Context *ctx)
 {
     timing_driven = ctx->setting<bool>("timing_driven");
+    timing_start_overlap = ctx->setting<float>("placerStatic/timingStartOverlap", timing_start_overlap);
+    timing_decay = ctx->setting<float>("placerStatic/timingDecay", timing_decay);
+    timing_exponent = ctx->setting<float>("placerStatic/timingExponent", timing_exponent);
+    timing_max_weight = ctx->setting<float>("placerStatic/timingMaxWeight", timing_max_weight);
 
     hpwl_scale_x = 1;
     hpwl_scale_y = 1;

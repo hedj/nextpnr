@@ -64,6 +64,16 @@ struct PlacerStaticCfg
     // for calculating timing estimates based on distance
     // estimate = c + mx*dx + my * dy
     delay_t timing_c = 100, timing_mx = 100, timing_my = 100;
+    // Momentum-based timing net weighting (DREAMPlace 4.0): once logic overlap falls below timing_start_overlap, each
+    // timing update multiplies every sink's weight by (1 + c), with ln(1 + c) a running average (decay timing_decay)
+    // of ln(1 + crit^timing_exponent). Weights only grow, up to timing_max_weight. As the weights compound, this relies
+    // on predict_delay ranking connections well, so it is enabled per architecture (or with the
+    // placerStatic/timingMomentum setting); otherwise the memoryless weight 1 + 5 crit^2 is used.
+    bool timing_momentum = false;
+    float timing_start_overlap = 0.8;
+    float timing_decay = 0.1;
+    float timing_exponent = 16;
+    float timing_max_weight = 100;
     // groups of cells that should be placed together.
     // groups < logic_groups are logic like LUTs and FFs, further groups for BRAM/DSP/misc
     std::vector<StaticCellGroupCfg> cell_groups;
